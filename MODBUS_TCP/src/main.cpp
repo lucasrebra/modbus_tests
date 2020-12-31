@@ -40,8 +40,9 @@ int segs = 0;
 #define END_CHAR ';'
 #define BUFF_CMD_SIZE 20
 
-SerialCommand sCmd;
+SerialCommand sCmd;//objeto para comandos serial
 
+//Print dispo version
 int cmdVersion(char* param, uint8_t len, char* response){
     //char fw_ver[20];
     sprintf(response, "$ACK_VERSION;");
@@ -49,11 +50,60 @@ int cmdVersion(char* param, uint8_t len, char* response){
     //strcat(response, fw_ver);
     return strlen(response);
 }
+
+
+//Printed when a command is not correct
 int cmdNack(char *param, uint8_t len, char* response){
     sprintf(response, "$NACK;");
     return strlen(response);
 }
 
+int cmdHreg(char*param, uint8_t len, char* response){
+  sprintf(response, "Implementar funcion ");
+  return strlen(response);
+}
+//Takes the serial string and gets the response for the command
+
+int cmdCell(char *param, uint8_t len, char* response){
+    char*p;
+    uint16_t cell_on = atoi(param);
+    p=strchr(param,'=');
+    p++;
+    uint16_t cell_off = atoi(p);
+    Serial.print("Cell: ");
+    Serial.println(cell_on);
+    
+    sprintf(response, "$ACK_c%d;", cell_off);
+    return strlen(response);
+}
+
+int cmdGetHreg(char *param, uint8_t len, char* response){
+    char*p; //pointer
+    uint16_t cell_on = atoi(param);
+    Serial.println(mb.Hreg(cell_on));
+
+    Serial.print("Cell: ");
+    Serial.println(cell_on);
+    
+    sprintf(response, "$ACK_c%d;", cell_on);
+    return strlen(response);
+}
+
+int cmdSetHreg(char *param, uint8_t len, char* response){
+    char*p; 
+    uint16_t cell_on = atoi(param);
+
+    p=strchr(param,'=');
+    p++;
+    uint16_t cell_off = atoi(p);
+    Serial.print("Cell: ");
+    Serial.println(cell_on);
+    
+    sprintf(response, "$ACK_c%d;", cell_off);
+    mb.Hreg(cell_on,cell_off);
+    return strlen(response);
+
+}
 void SerialIO(){
 
     char c;
@@ -64,18 +114,20 @@ void SerialIO(){
     while (Serial.available()) {
         c = char(Serial.read());
         if(c == START_CHAR)
-        cmd_p = 0;
-        cmd_buffer[cmd_p] = c;
-        cmd_p += 1;
-        cmd_p %= BUFF_CMD_SIZE;
+          cmd_p = 0;
+          cmd_buffer[cmd_p] = c;
+          cmd_p += 1;
+          cmd_p %= BUFF_CMD_SIZE;//This is for discharging the buffer
+
+      
         if(c == END_CHAR) {
             cmd_buffer[cmd_p] = 0;
             cmd_p = 0;
-            sCmd.processCommand(cmd_buffer, response);
+            sCmd.processCommand(cmd_buffer, response);//converts the string in the command
+            //eliminating the end and the start_char
             Serial.println(response);
         }
     }  
-
 }
 
 //CALLBACKS--> Cada vez que se produzca una peticion del cliente
@@ -102,6 +154,8 @@ uint16_t cbWrite(TRegister* reg, uint16_t val) {
   return val;
 }
 
+
+
 /*
  * Programa de configuracion: 
  * -Configuracion de la conexion wifi utilizada
@@ -113,8 +167,8 @@ void setup() {
     Serial.begin(115200);
 
     //Conexion WIFI
-    //WiFi.begin("MOVISTAR_8380", "paderni9");
-    WiFi.begin("twave-24", "KD6rUYrv");
+    WiFi.begin("MOVISTAR_8380", "paderni9");
+    //WiFi.begin("twave-24", "KD6rUYrv");
     while (WiFi.status() != WL_CONNECTED) 
     {
         delay(500);
@@ -141,9 +195,12 @@ void setup() {
     //Inicializamos la variable ts para que mida ms
     ts = millis();
 
-    sCmd.addCommand("V", cmdVersion);
-    sCmd.setDefaultHandler(cmdNack);
 
+    //Comandos disponibles
+    sCmd.addCommand("V", cmdVersion);
+    sCmd.addCommand("G",cmdGetHreg);
+    sCmd.addCommand("S",cmdSetHreg);
+    sCmd.setDefaultHandler(cmdNack);
 
 }
 

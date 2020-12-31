@@ -72,7 +72,7 @@ int SerialCommand::processCommand(char* command, char* response)
     bool cmd_found = 0;
     int param_len = 0;
     int resp_len = 0;
-    char *newcommand, *param;    
+    char *newcommand, *param;  
 
     newcommand = command + hdr_size;
     param = command + hdr_size + command_size;
@@ -82,6 +82,7 @@ int SerialCommand::processCommand(char* command, char* response)
             break;
     }
 
+
     for (i = 0; i < nCommands; i++) {
         if (strncmp(commandList[i].header, newcommand, command_size) == 0) {
             cmd_found = 1;
@@ -89,6 +90,8 @@ int SerialCommand::processCommand(char* command, char* response)
             break;
         }
     }
+
+
     if (!cmd_found && (defaultHandler != NULL)) {
       (*defaultHandler)(param, 0, response);
     }
