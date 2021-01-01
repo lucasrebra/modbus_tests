@@ -21,6 +21,7 @@
 #include <WiFi.h>
 #include <ModbusIP_ESP8266.h>
 #include <SerialCommand.h>
+#include "BluetoothSerial.h"
 
 //Offsets de las direcciones registro en los diferentes tipos de protocolo
 const int SEGUNDERO = 20; 
@@ -30,6 +31,7 @@ const int nreg=10;
 
 //ModbusIP object
 ModbusIP mb;
+BluetoothSerial SerialBT;
 
 //Variables utilizadas para el control temporal
 long ts;
@@ -77,30 +79,51 @@ int cmdCell(char *param, uint8_t len, char* response){
     return strlen(response);
 }
 
-int cmdGetHreg(char *param, uint8_t len, char* response){
-    char*p; //pointer
-    uint16_t cell_on = atoi(param);
-    Serial.println(mb.Hreg(cell_on));
+//Command function by serial that takes a string with structure
+//$GETXX; and print by serial the value of the XX register
 
-    Serial.print("Cell: ");
-    Serial.println(cell_on);
+int cmdGetHreg(char *param, uint8_t len, char* response){
+    char*p=param; //pointer
+    p+=2;
+    uint16_t nHreg = atoi(p);
+
+    Serial.print("El número leido del Holding ");
+    Serial.print(nHreg);
+    Serial.print(" es ");
+    Serial.print(mb.Hreg(nHreg));
+
+    if(SerialBT.available()){
+      SerialBT.print("El número leido del Holding ");
+      SerialBT.print(nHreg);
+      SerialBT.print(" es ");
+      SerialBT.print(mb.Hreg(nHreg));
+    }
     
-    sprintf(response, "$ACK_c%d;", cell_on);
     return strlen(response);
 }
 
-int cmdSetHreg(char *param, uint8_t len, char* response){
-    char*p; 
-    uint16_t cell_on = atoi(param);
+//Command function that takes by serial a string with structure
+// SETXX=YY; and introduce on the holding register XX the value YY
 
+int cmdSetHreg(char *param, uint8_t len, char* response){
+    char*p=param;
+
+    p=p+2;
+    uint16_t nHreg = atoi(p);
+    int pValue=mb.Hreg(nHreg);
     p=strchr(param,'=');
     p++;
-    uint16_t cell_off = atoi(p);
-    Serial.print("Cell: ");
-    Serial.println(cell_on);
-    
-    sprintf(response, "$ACK_c%d;", cell_off);
-    mb.Hreg(cell_on,cell_off);
+    uint16_t value = atoi(p);
+
+    mb.Hreg(nHreg,value);
+
+    Serial.print("Se ha cambiado el valor del registro ");
+    Serial.print(nHreg);
+    Serial.print(" que tenia el valor ");
+    Serial.print(pValue);
+    Serial.print(" por el valor ");
+    Serial.print(value);
+
     return strlen(response);
 
 }
@@ -126,6 +149,33 @@ void SerialIO(){
             sCmd.processCommand(cmd_buffer, response);//converts the string in the command
             //eliminating the end and the start_char
             Serial.println(response);
+        }
+    }  
+}
+
+//Funcion para conexion comandos serial por bluetooth
+void SerialBluetooth(){
+
+    char c;
+    char response[BUFF_CMD_SIZE];
+    static char bt_buffer[BUFF_CMD_SIZE];
+    static unsigned int bt_p = 0;
+
+    while (SerialBT.available()) {
+        c = char(SerialBT.read());
+        if(c == START_CHAR)
+          bt_p = 0;
+          bt_buffer[bt_p] = c;
+          bt_p += 1;
+          bt_p %= BUFF_CMD_SIZE;//This is for discharging the buffer
+
+      
+        if(c == END_CHAR) {
+            bt_buffer[bt_p] = 0;
+            bt_p = 0;
+            sCmd.processCommand(bt_buffer, response);//converts the string in the command
+            //eliminating the end and the start_char
+            SerialBT.println(response);
         }
     }  
 }
@@ -180,6 +230,10 @@ void setup() {
     Serial.println( "IP address: " );
     Serial.println( WiFi.localIP() );
 
+    //BTconection
+    SerialBT.begin("ESP32test"); //Bluetooth device name
+    Serial.println("The device started, now you can pair it with bluetooth!");
+
     //Empieza la conexion modbus como master
     mb.server();		
 
@@ -198,8 +252,8 @@ void setup() {
 
     //Comandos disponibles
     sCmd.addCommand("V", cmdVersion);
-    sCmd.addCommand("G",cmdGetHreg);
-    sCmd.addCommand("S",cmdSetHreg);
+    sCmd.addCommand("GET",cmdGetHreg);
+    sCmd.addCommand("SET",cmdSetHreg);
     sCmd.setDefaultHandler(cmdNack);
 
 }
@@ -222,5 +276,8 @@ void loop() {
   }
     
     SerialIO();
+    SerialBluetooth();
+    
+
     delay(10);
 }
