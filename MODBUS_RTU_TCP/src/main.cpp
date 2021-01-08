@@ -73,6 +73,12 @@ int cmdHreg(char*param, uint8_t len, char* response){
   sprintf(response, "Implementar funcion ");
   return strlen(response);
 }
+
+int cmdIP(char*param, uint8_t len, char* response){
+  SerialBT.println(WiFi.localIP());
+  sprintf(response, "Lectura IP");
+  return strlen(response);
+}
 //Takes the serial string and gets the response for the command
 
 int cmdCell(char *param, uint8_t len, char* response){
@@ -220,8 +226,8 @@ void setup() {
 
   /*Configuramos conexion wifi*/
 
-  //WiFi.begin("twave-24", "KD6rUYrv");
-  WiFi.begin("MOVISTAR_8380","paderni9");
+  WiFi.begin("twave-24", "KD6rUYrv");
+  //WiFi.begin("MOVISTAR_8380","paderni9");
   SerialBT.println( WiFi.localIP() );
 
   /*Configuramos el puerto serial Bluetoth*/
@@ -266,6 +272,7 @@ void setup() {
     sCmd.addCommand("V", cmdVersion);
     sCmd.addCommand("GET",cmdGetHreg);
     sCmd.addCommand("SET",cmdSetHreg);
+    sCmd.addCommand("IP",cmdIP);
     sCmd.setDefaultHandler(cmdNack);
   
 }
