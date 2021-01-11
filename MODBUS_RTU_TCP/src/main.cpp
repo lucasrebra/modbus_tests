@@ -35,6 +35,16 @@
 #define FROM_REG 20
 #define SEGUNDERO 30*/
 
+/*LIBRERIAS ETH y SD card*/
+#include <ETH.h>
+#include <SPI.h>
+#include <SD.h>
+#include "FS.h"
+
+/*Librerías para tiempo */
+#include <NTPClient.h>
+#include <WiFiUdp.h>
+
 int REGN=0;
 int SLAVE_ID=1;
 int PULL_ID=1;
@@ -52,6 +62,38 @@ BluetoothSerial SerialBT;
 
 ModbusRTU mb1;
 ModbusIP mb2;
+
+/*Parametros de conexion ETHERNET*/
+#define SD_MISO         2
+#define SD_MOSI         15
+#define SD_SCLK         14
+#define SD_CS           13
+
+/*
+   * ETH_CLOCK_GPIO0_IN   - default: external clock from crystal oscillator
+   * ETH_CLOCK_GPIO0_OUT  - 50MHz clock from internal APLL output on GPIO0 - possibly an inverter is needed for LAN8720
+   * ETH_CLOCK_GPIO16_OUT - 50MHz clock from internal APLL output on GPIO16 - possibly an inverter is needed for LAN8720
+   * ETH_CLOCK_GPIO17_OUT - 50MHz clock from internal APLL inverted output on GPIO17 - tested with LAN8720
+*/
+// #define ETH_CLK_MODE    ETH_CLOCK_GPIO0_OUT          // Version with PSRAM
+#define ETH_CLK_MODE    ETH_CLOCK_GPIO17_OUT            // Version with not PSRAM
+// Pin# of the enable signal for the external crystal oscillator (-1 to disable for internal APLL source)
+#define ETH_POWER_PIN   -1
+// Type of the Ethernet PHY (LAN8720 or TLK110)
+#define ETH_TYPE        ETH_PHY_LAN8720
+// I²C-address of Ethernet PHY (0 or 1 for LAN8720, 31 for TLK110)
+#define ETH_ADDR        0
+// Pin# of the I²C clock signal for the Ethernet PHY
+#define ETH_MDC_PIN     23
+// Pin# of the I²C IO signal for the Ethernet PHY
+#define ETH_MDIO_PIN    18
+//connected
+static bool eth_connected = false;
+
+//Objetos temporales
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
+
 
 //Print dispo version
 int cmdVersion(char* param, uint8_t len, char* response){
@@ -224,10 +266,12 @@ uint16_t cbWrite(TRegister* reg, uint16_t val) {
 void setup() {
   Serial.begin(115200);
 
+    
+
   /*Configuramos conexion wifi*/
 
-  WiFi.begin("twave-24", "KD6rUYrv");
-  //WiFi.begin("MOVISTAR_8380","paderni9");
+ // WiFi.begin("twave-24", "KD6rUYrv");
+  WiFi.begin("MOVISTAR_8380","paderni9");
   SerialBT.println( WiFi.localIP() );
 
   /*Configuramos el puerto serial Bluetoth*/
@@ -235,6 +279,7 @@ void setup() {
   SerialBT.begin("ESP32test"); //Bluetooth device name
   SerialBT.print("The device started, now you can pair it with bluetooth!\n");
 
+  
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     SerialBT.print(".");
@@ -245,11 +290,40 @@ void setup() {
   SerialBT.print("IP address:\n");
   SerialBT.print(WiFi.localIP());//Imprimimos IP de la conexion
 
+
   /*Congiguramos la comunicación modbus RTU*/
   Serial.begin(9600, SERIAL_8N1);
   mb1.begin(&Serial);
 
-  
+  /*Init of the SDcard
+  SPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
+
+   if (!SD.begin(SD_CS)) {
+        Serial.println("SDCard MOUNT FAIL");
+    } else {
+        File file = SD.open("/data.csv",FILE_APPEND);
+        if(!file){
+          file=SD.open("/data.csv",FILE_APPEND);
+          Serial.println("Creado nuevo archivo data.csv");
+        }
+        String DataString;
+        DataString+= "Hora";
+        DataString+= ",";
+        for(int i=1;i<=10;i++){
+          DataString+= "Hreg";
+          DataString+=String(i);
+          if(i<=9){
+          DataString+= ",";}
+        }
+
+        file.println(DataString);
+        uint32_t cardSize = SD.cardSize() / (1024 * 1024);
+        String str = "SDCard Size: " + String(cardSize) + "MB";
+        Serial.println(str);
+        file.close();
+    }*/
+
+
   /*Objeto modbus2--> modbusIP*/
 
   mb2.server();
@@ -267,18 +341,69 @@ void setup() {
   //mb.Hreg(REGN, 100);
   //mb1.onGetHreg(REGN,cbRead,10);
   //mb1.onSetHreg(REGN,cbWrite,10);
+  SPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
+
+    while (!SD.begin(SD_CS)) {
+        SerialBT.println("SDCard MOUNT FAIL");
+    } 
+    
+    File file = SD.open("/data.csv",FILE_APPEND);
+
+    if(!file){
+      file=SD.open("/data.csv",FILE_APPEND);
+      SerialBT.println("Creado nuevo archivo data.csv");
+    }
+    
+
+  uint32_t cardSize = SD.cardSize() / (1024 * 1024);
+  String str = "SDCard Size: " + String(cardSize) + "MB";
+  Serial.println(str);
+  file.close();
+        
+    
+
+  
+
+    
 
   //Comandos disponibles
-    sCmd.addCommand("V", cmdVersion);
-    sCmd.addCommand("GET",cmdGetHreg);
-    sCmd.addCommand("SET",cmdSetHreg);
-    sCmd.addCommand("IP",cmdIP);
-    sCmd.setDefaultHandler(cmdNack);
-  
+  sCmd.addCommand("V", cmdVersion);
+  sCmd.addCommand("GET",cmdGetHreg);
+  sCmd.addCommand("SET",cmdSetHreg);
+  sCmd.addCommand("IP",cmdIP);
+  sCmd.setDefaultHandler(cmdNack);
 }
 
 void loop() {
+  //timeClient.update();
+  File file = SD.open("/data.csv",FILE_APPEND);
+  mb1.task();
+  mb2.task();
+  String DataHreg;
   
+  DataHreg+= "Hora";
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(0));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(1));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(2));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(3));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(4));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(5));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(6));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(7));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(8));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(9));
+  
+
   if ( millis() > ts + 2000 ) 
   {
     segs++;
@@ -286,13 +411,36 @@ void loop() {
     mb1.Hreg(SEGUNDERO,segs);//Escribimos en la direccion RTU los segundos
     //mb2.Hreg(SEGUNDERO,segs);//Escribimos en la direccion TCP los segundos
     SerialBT.print(mb1.Hreg(SEGUNDERO));
+    file.println(DataHreg);
+    SerialBT.println(DataHreg);
+
+    }
+    
+    /*
+    String Datadate;
+
+    if(eth_connected==true){
+        Datadate+= String(timeClient.getFormattedTime());
+        }
+    else{
+        Datadate+= "ERROR";
+      }
+    Datadate+= ",";
+    for(int i=0;i<10;i++){
+      Datadate+=String(mb1.Hreg(i));
+      if(i<9){
+      Datadate+=",";}
+    }
+    file.println(Datadate);
+    Serial.println(Datadate);
+    
   }
 
-  mb1.task();
-  mb2.task();
+  file.close();
+  */
 
   SerialIO();//Funcion comandos serial 
   SerialBluetooth();//Funcion comandos serial bluetooth
-
-  delay(50);
+  file.close();
+  delay(100);
 }
