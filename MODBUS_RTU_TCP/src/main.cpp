@@ -94,7 +94,36 @@ static bool eth_connected = false;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
 
+//Convierte Hreg en string
+String getStringHreg(){
+  //Conformamos la String con formato .csv
+  timeClient.update();//get time object
 
+  String DataHreg;
+  DataHreg+= String(timeClient.getFormattedTime());
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(0));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(1));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(2));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(3));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(4));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(5));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(6));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(7));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(8));
+  DataHreg+= ",";
+  DataHreg+= String(mb1.Hreg(9));
+
+  return DataHreg;
+}
 //Print dispo version
 int cmdVersion(char* param, uint8_t len, char* response){
     //char fw_ver[20];
@@ -237,6 +266,29 @@ void SerialBluetooth(){
     }  
 }
 
+void SDinit(){
+
+    SPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
+
+    while (!SD.begin(SD_CS)) {
+        SerialBT.println("SDCard MOUNT FAIL");
+    } 
+    
+    File file = SD.open("/data.csv",FILE_READ);
+
+    if(!file){
+      file=SD.open("/data.csv",FILE_APPEND);
+      SerialBT.println("Creado nuevo archivo data.csv");
+      file.println("Hora, Hreg1, Hreg2, Hreg3, Hreg4, Hreg5, Hreg6, Hreg7, Hreg8, Hreg9, Hreg10");
+    }
+    
+  uint32_t cardSize = SD.cardSize() / (1024 * 1024);
+  String str = "SDCard Size: " + String(cardSize) + "MB";
+  Serial.println(str);
+  file.close();
+
+  timeClient.begin();
+}
 
 
 
@@ -266,12 +318,10 @@ uint16_t cbWrite(TRegister* reg, uint16_t val) {
 void setup() {
   Serial.begin(115200);
 
-    
-
   /*Configuramos conexion wifi*/
 
- // WiFi.begin("twave-24", "KD6rUYrv");
-  WiFi.begin("MOVISTAR_8380","paderni9");
+  WiFi.begin("twave-24", "KD6rUYrv");
+ // WiFi.begin("MOVISTAR_8380","paderni9");
   SerialBT.println( WiFi.localIP() );
 
   /*Configuramos el puerto serial Bluetoth*/
@@ -295,34 +345,7 @@ void setup() {
   Serial.begin(9600, SERIAL_8N1);
   mb1.begin(&Serial);
 
-  /*Init of the SDcard
-  SPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
-
-   if (!SD.begin(SD_CS)) {
-        Serial.println("SDCard MOUNT FAIL");
-    } else {
-        File file = SD.open("/data.csv",FILE_APPEND);
-        if(!file){
-          file=SD.open("/data.csv",FILE_APPEND);
-          Serial.println("Creado nuevo archivo data.csv");
-        }
-        String DataString;
-        DataString+= "Hora";
-        DataString+= ",";
-        for(int i=1;i<=10;i++){
-          DataString+= "Hreg";
-          DataString+=String(i);
-          if(i<=9){
-          DataString+= ",";}
-        }
-
-        file.println(DataString);
-        uint32_t cardSize = SD.cardSize() / (1024 * 1024);
-        String str = "SDCard Size: " + String(cardSize) + "MB";
-        Serial.println(str);
-        file.close();
-    }*/
-
+  
 
   /*Objeto modbus2--> modbusIP*/
 
@@ -334,37 +357,11 @@ void setup() {
   /*Setup mb1--> ModbusRTU*/
 
   mb1.slave(SLAVE_ID);
-  //Registros de valores fijos
-  //mb1.addHreg(REGN,100,10);
-  //Registro segundero
-  //mb1.addIreg(SEGUNDERO);
-  //mb.Hreg(REGN, 100);
-  //mb1.onGetHreg(REGN,cbRead,10);
-  //mb1.onSetHreg(REGN,cbWrite,10);
-  SPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
-
-    while (!SD.begin(SD_CS)) {
-        SerialBT.println("SDCard MOUNT FAIL");
-    } 
-    
-    File file = SD.open("/data.csv",FILE_APPEND);
-
-    if(!file){
-      file=SD.open("/data.csv",FILE_APPEND);
-      SerialBT.println("Creado nuevo archivo data.csv");
-    }
-    
-
-  uint32_t cardSize = SD.cardSize() / (1024 * 1024);
-  String str = "SDCard Size: " + String(cardSize) + "MB";
-  Serial.println(str);
-  file.close();
-        
-    
-
   
+  //Function that inits SDcard
+  SDinit();
 
-    
+  timeClient.begin(); 
 
   //Comandos disponibles
   sCmd.addCommand("V", cmdVersion);
@@ -375,34 +372,15 @@ void setup() {
 }
 
 void loop() {
-  //timeClient.update();
+
+  //timeClient.update();//get time object
   File file = SD.open("/data.csv",FILE_APPEND);
+
+  //modbus objects tasks
   mb1.task();
   mb2.task();
-  String DataHreg;
-  
-  DataHreg+= "Hora";
-  DataHreg+= ",";
-  DataHreg+= String(mb1.Hreg(0));
-  DataHreg+= ",";
-  DataHreg+= String(mb1.Hreg(1));
-  DataHreg+= ",";
-  DataHreg+= String(mb1.Hreg(2));
-  DataHreg+= ",";
-  DataHreg+= String(mb1.Hreg(3));
-  DataHreg+= ",";
-  DataHreg+= String(mb1.Hreg(4));
-  DataHreg+= ",";
-  DataHreg+= String(mb1.Hreg(5));
-  DataHreg+= ",";
-  DataHreg+= String(mb1.Hreg(6));
-  DataHreg+= ",";
-  DataHreg+= String(mb1.Hreg(7));
-  DataHreg+= ",";
-  DataHreg+= String(mb1.Hreg(8));
-  DataHreg+= ",";
-  DataHreg+= String(mb1.Hreg(9));
-  
+
+  String DataHreg=getStringHreg();
 
   if ( millis() > ts + 2000 ) 
   {
@@ -415,29 +393,6 @@ void loop() {
     SerialBT.println(DataHreg);
 
     }
-    
-    /*
-    String Datadate;
-
-    if(eth_connected==true){
-        Datadate+= String(timeClient.getFormattedTime());
-        }
-    else{
-        Datadate+= "ERROR";
-      }
-    Datadate+= ",";
-    for(int i=0;i<10;i++){
-      Datadate+=String(mb1.Hreg(i));
-      if(i<9){
-      Datadate+=",";}
-    }
-    file.println(Datadate);
-    Serial.println(Datadate);
-    
-  }
-
-  file.close();
-  */
 
   SerialIO();//Funcion comandos serial 
   SerialBluetooth();//Funcion comandos serial bluetooth
