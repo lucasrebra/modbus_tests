@@ -28,6 +28,8 @@
 #include <ModbusRTU.h>
 #include <BluetoothSerial.h>
 #include <SerialCommand.h>
+#include <ModbusEthernet.h>
+
 /*
 #define REGN 10
 #define SLAVE_ID 1
@@ -40,6 +42,9 @@
 #include <SPI.h>
 #include <SD.h>
 #include "FS.h"
+#include "SD_MMC.h"
+#include <Ethernet.h>
+
 
 /*Librerías para tiempo */
 #include <NTPClient.h>
@@ -87,12 +92,13 @@ ModbusIP mb2;
 #define ETH_MDC_PIN     23
 // Pin# of the I²C IO signal for the Ethernet PHY
 #define ETH_MDIO_PIN    18
-//connected
-static bool eth_connected = false;
+
+#define NRST 5
 
 //Objetos temporales
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
+
 
 //Convierte Hreg en string
 String getStringHreg(){
@@ -267,8 +273,7 @@ void SerialBluetooth(){
 }
 
 void SDinit(){
-
-    SPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
+  SPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
 
     while (!SD.begin(SD_CS)) {
         SerialBT.println("SDCard MOUNT FAIL");
@@ -277,17 +282,13 @@ void SDinit(){
     File file = SD.open("/data.csv",FILE_READ);
 
     if(!file){
+      file.close();
       file=SD.open("/data.csv",FILE_APPEND);
       SerialBT.println("Creado nuevo archivo data.csv");
       file.println("Hora, Hreg1, Hreg2, Hreg3, Hreg4, Hreg5, Hreg6, Hreg7, Hreg8, Hreg9, Hreg10");
     }
     
-  uint32_t cardSize = SD.cardSize() / (1024 * 1024);
-  String str = "SDCard Size: " + String(cardSize) + "MB";
-  Serial.println(str);
   file.close();
-
-  timeClient.begin();
 }
 
 
@@ -316,18 +317,21 @@ uint16_t cbWrite(TRegister* reg, uint16_t val) {
   
 
 void setup() {
+  //SDinit();
+
   Serial.begin(115200);
-
-  /*Configuramos conexion wifi*/
-
-  WiFi.begin("twave-24", "KD6rUYrv");
- // WiFi.begin("MOVISTAR_8380","paderni9");
-  SerialBT.println( WiFi.localIP() );
 
   /*Configuramos el puerto serial Bluetoth*/
 
   SerialBT.begin("ESP32test"); //Bluetooth device name
   SerialBT.print("The device started, now you can pair it with bluetooth!\n");
+
+  /*Configuramos conexion wifi*/
+
+  WiFi.begin("twave-24", "KD6rUYrv");
+  //WiFi.begin("MOVISTAR_8380","paderni9");
+  SerialBT.println( WiFi.localIP() );
+
 
   
   while (WiFi.status() != WL_CONNECTED) {
@@ -335,10 +339,13 @@ void setup() {
     SerialBT.print(".");
   }
 
+  
+
   SerialBT.print("\n");
   SerialBT.print("WiFi connected\n");  
   SerialBT.print("IP address:\n");
   SerialBT.print(WiFi.localIP());//Imprimimos IP de la conexion
+
 
 
   /*Congiguramos la comunicación modbus RTU*/
@@ -357,11 +364,9 @@ void setup() {
   /*Setup mb1--> ModbusRTU*/
 
   mb1.slave(SLAVE_ID);
-  
-  //Function that inits SDcard
-  SDinit();
 
-  timeClient.begin(); 
+
+  
 
   //Comandos disponibles
   sCmd.addCommand("V", cmdVersion);
@@ -369,9 +374,24 @@ void setup() {
   sCmd.addCommand("SET",cmdSetHreg);
   sCmd.addCommand("IP",cmdIP);
   sCmd.setDefaultHandler(cmdNack);
+
+  
+
+  SPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
+  //Function that inits SDcard
+  if(!SD.begin(SD_CS)){
+    SerialBT.println("No SDcard found");
+  }
+
+  SDinit();
+  //ETH.begin(ETH_ADDR, ETH_POWER_PIN, ETH_MDC_PIN, ETH_MDIO_PIN, ETH_PHY_LAN8720, ETH_CLK_MODE);//ETH_TYPE
+  //ETH.begin();
+  //Funciona con una cosa o con la otra, sospecho que comparten pines del SPI
 }
 
+
 void loop() {
+  //ETH.begin(ETH_ADDR, ETH_POWER_PIN, ETH_MDC_PIN, ETH_MDIO_PIN, ETH_PHY_LAN8720, ETH_CLK_MODE);
 
   //timeClient.update();//get time object
   File file = SD.open("/data.csv",FILE_APPEND);
@@ -386,16 +406,18 @@ void loop() {
   {
     segs++;
     ts = millis();
+    SerialBT.println(WiFi.localIP());
+    SerialBT.println(ETH.localIP());
     mb1.Hreg(SEGUNDERO,segs);//Escribimos en la direccion RTU los segundos
     //mb2.Hreg(SEGUNDERO,segs);//Escribimos en la direccion TCP los segundos
     SerialBT.print(mb1.Hreg(SEGUNDERO));
     file.println(DataHreg);
     SerialBT.println(DataHreg);
+  }
 
-    }
-
-  SerialIO();//Funcion comandos serial 
   SerialBluetooth();//Funcion comandos serial bluetooth
+  SerialIO();//Funcion comandos serial 
   file.close();
   delay(100);
+
 }
